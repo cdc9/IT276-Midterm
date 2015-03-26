@@ -1,171 +1,170 @@
+//SDL libraries and such
+#include <SDL.h>
+#include <SDL_image.h>
+#include <SDL_ttf.h>
+#include <SDL_mixer.h>
 #include <stdlib.h>
-#include "SDL.h"
-#include "SDL_image.h"
-#include "graphics.h"
-
-extern SDL_Surface *screen;
-extern SDL_Surface *buffer; /*pointer to the draw buffer*/
-extern SDL_Rect Camera;
-
-void Init_All();
-
-int getImagePathFromFile(char *filepath,char * filename);
-int getCoordinatesFromFile(int *x, int *y,char * filename);
-void addCoordinateToFile(char *filepath,int x, int y);
+#include "resources.h"
 
 
-/*this program must be run from the directory directly below images and src, not from within src*/
-/*notice the default arguments for main.  SDL expects main to look like that, so don't change it*/
+//My header files
+#include "sprites.h"
+//#include "gfunc.h"
+#include "entity.h"
+#include "globals.h"
+
+bool init()
+{
+	/* start SDL 1.2 */
+	if ( SDL_Init(SDL_INIT_EVERYTHING) == -1 )
+	{
+		return false;
+	}
+
+	/* fonts for text */
+	if ( TTF_Init() == -1 )
+	{
+		return false;
+	}
+
+	/* Fourth argument creates the screens surface in system memory */
+	screen = SDL_SetVideoMode (SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_BPP, SDL_SWSURFACE);
+	if (screen == NULL)
+	{
+		return false;
+	}
+
+	/* Window title */
+	SDL_WM_SetCaption ("Midterm Game", NULL);
+
+	/* If nothing's wrong, return true. */
+	return true;
+}
+
+/* Loads all files in one function, foreshadow to precaching? */
+bool load_Files()
+{
+	/* lvl 1 sprites */
+	background = load_Image("level1.png");
+	if (background == NULL)
+	{
+		return false;
+		printf("error: %s\n", SDL_GetError());
+	}
+
+	/* font */
+	font = TTF_OpenFont ("lazy.ttf", 28);
+	if (font == NULL)
+	{
+		return false;
+		printf("error: %s\n", SDL_GetError());
+	}
+
+	return true;
+}
+
+void set_Camera (entity_t *ent)
+{
+	 //Center the camera over the player 
+	camera.x = ( (int)ent->x + ent->width / 2) - SCREEN_WIDTH / 2;
+	camera.y = ( (int)ent->y + ent->height / 2) - SCREEN_HEIGHT / 2;
+
+	if ( camera.x < 0 )
+		camera.x = 0;
+	if ( camera.y < 0 )
+		camera.y = 0;
+	if ( camera.x > LEVEL_WIDTH - camera.w)
+		camera.x = LEVEL_WIDTH - camera.w;
+	if ( camera.y > LEVEL_HEIGHT - camera.h )
+		camera.y = LEVEL_HEIGHT - camera.h;
+}
+
+/* for program exiting, cleaning and freeing up memory */
+void clear()
+{
+	//Free the memory
+	SDL_FreeSurface (background);
+	SDL_FreeSurface (message);
+
+	/* Closing the fonts and text engine */
+	TTF_CloseFont (font);
+	TTF_Quit();
+
+	//Will free the screen surface and close SDL
+	SDL_Quit();
+}
+
+// Main function
 int main(int argc, char *argv[])
 {
-  SDL_Surface *temp = NULL;
-  SDL_Surface *bg;
-  Sprite *tile;
-  int done;
-  int keyn;
-  int i;
-  int mx,my;
-  int tx = 0,ty = 0;
-  Uint8 *keys;
-  char imagepath[512];
-  Init_All();
-  if (getImagePathFromFile(imagepath,"config.ini") == 0)
-  {
-    temp = IMG_Load(imagepath);/*notice that the path is part of the filename*/
-  }
-  if(temp != NULL)						/*ALWAYS check your pointers before you use them*/
-    bg = SDL_DisplayFormat(temp);
-  SDL_FreeSurface(temp);
-  if(bg != NULL)
-    SDL_BlitSurface(bg,NULL,buffer,NULL);
-  tile = LoadSprite("images/32_32_16_2sprite.png",32,32);
-  getCoordinatesFromFile(&tx, &ty,"config.ini");
-  fprintf(stdout,"x and y: (%i, %i)\n",tx,ty);
-  addCoordinateToFile("config.ini",7,11);
-  if(tile != NULL)
-  {
-        for(i = 0;i < 12;i++)
+
+	bool quit = false;
+	
+	// Start everything (SDL, open window, etc.), make sure done successfully 
+	if ( init() == false)
+	{
+		return 1;
+	}
+	
+	// Load all the files, check if done successfully 
+	if ( load_Files() == false)
+	{
+		return 1;
+	}
+
+	//Player creation
+	player = Init_Ent();
+	player->resetPosition = init_Position;
+	player->handle_Input = handle_Input;
+	player->move = move;
+	player->show = show;
+
+	init_Position(player);
+
+	SET_FLAG(player->flags, ENT_SOLID);
+
+	//Ground creation
+	ground = Init_Ent();
+	sprintf(ground->classname, "ground");
+	ground ->x = 0;
+	ground ->y = 400;
+	ground ->width = 400;
+	ground ->height = 40;
+
+	// GAME		
+	do
+	{
+		while (SDL_PollEvent (&event))
+		{
+			handle_Input(player);
+
+			//If the user presses Quit (the x button on the window)
+			if(event.type == SDL_QUIT)
+			{
+				//Game is done
+				quit = true;
+			}
+
+			move(player);
+			set_Camera(player);
+			show(player);
+		}
+		//Fill in player square
+		//SDL_FillRect( screen, &playerSprite, SDL_MapRGB( screen->format, 0x77, 0x77, 0x77 ) );
+		//Show the ground
+        //SDL_FillRect( screen, &platform1, SDL_MapRGB( screen->format, 0x77, 0x77, 0x77 ) );
+
+		 //Update the screen
+        if( SDL_Flip( screen ) == -1 )
         {
-            DrawSprite(tile,buffer,(i * tile->w) + tx,ty,0);
+            return 1;
         }
-  }
-  done = 0;
-  do
-  {
-    ResetBuffer ();
-    DrawMouse();
-    NextFrame();
-    SDL_PumpEvents();
-    keys = SDL_GetKeyState(&keyn);
-    if(SDL_GetMouseState(&mx,&my))
-    {
-      DrawSprite(tile,buffer,(mx /32) * 32,(my /32) * 32,0); 
-    }
-    if(keys[SDLK_ESCAPE])done = 1;
-  }while(!done);
-  exit(0);		/*technically this will end the program, but the compiler likes all functions that can return a value TO return a value*/
-  return 0;
-}
+	}
+	
+	while(!quit);
 
-void CleanUpAll()
-{
-  CloseSprites();
-  /*any other cleanup functions can be added here*/ 
-}
+	clear();
 
-void Init_All()
-{
-  Init_Graphics();
-
-  InitMouse();
-  atexit(CleanUpAll);
-}
-
-int getImagePathFromFile(char *filepath,char * filename)
-{
-    FILE *fileptr = NULL;
-    char buf[255];
-    int returnValue = -1;
-    if (!filepath)
-    {
-        fprintf(stdout,"getImagePathFromFile: warning, no output parameter provided\n");
-        return -1;
-    }
-    if (!filename)
-    {
-        fprintf(stdout,"getImagePathFromFile: warning, no input file path provided\n");
-        return -1;
-    }
-    fileptr = fopen(filename,"r");
-    if (!fileptr)
-    {
-        fprintf(stderr,"unable to open file: %s\n",filename);
-        return -1;
-    }
-    if (fscanf(fileptr,"%s",buf))
-    {
-        if (strcmp(buf,"image:")==0)
-        {
-            fscanf(fileptr,"%s",filepath);
-            returnValue = 0;
-        }
-    }
-    fclose(fileptr);
-    return returnValue;
-}
-
-void addCoordinateToFile(char *filepath,int x, int y)
-{
-    FILE *fileptr = NULL;
-    if (!filepath)
-    {
-        fprintf(stdout,"addCoordinateToFile: warning, no input file path provided\n");
-        return;
-    }
-    fileptr = fopen(filepath,"a");
-    if (!fileptr)
-    {
-        fprintf(stderr,"unable to open file: %s\n",filepath);
-        return;
-    }
-    fprintf(fileptr,"newcoordinate: %i %i\n",x,y);
-    fclose(fileptr);
-}
-
-int getCoordinatesFromFile(int *x, int *y,char * filename)
-{
-    FILE *fileptr = NULL;
-    char buf[255];
-    int tx,ty;
-    int returnValue = -1;
-    if ((!x)&&(!y))
-    {
-        fprintf(stdout,"getCoordinatesFromFile: warning, no output parameter provided\n");
-        return -1;
-    }
-    if (!filename)
-    {
-        fprintf(stdout,"getCoordinatesFromFile: warning, no input file path provided\n");
-        return -1;
-    }
-    fileptr = fopen(filename,"r");
-    if (!fileptr)
-    {
-        fprintf(stderr,"unable to open file: %s\n",filename);
-        return -1;
-    }
-    while (fscanf(fileptr,"%s",buf) != EOF)
-    {
-        fprintf(stdout,"buf is: %s\n",buf);
-        if (strcmp(buf,"position:")==0)
-        {
-            fscanf(fileptr,"%i %i",&tx,&ty);
-            fprintf(stdout,"as read: %i, %i\n",tx,ty);
-            returnValue = 0;
-        }
-    }
-    fclose(fileptr);
-    if (x)*x = tx;
-    if (y)*y = ty;
-    return returnValue;
+	exit(0);
+	return 0;
 }

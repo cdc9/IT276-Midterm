@@ -1,0 +1,5 @@
+image: images/bgtest.png
+width: 1024
+height:768
+tile_width:32
+tile_height:24
